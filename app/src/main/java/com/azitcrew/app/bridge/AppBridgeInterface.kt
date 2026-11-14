@@ -12,6 +12,8 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.core.content.ContextCompat
 import com.azitcrew.app.BuildConfig
+import com.azitcrew.app.auth.TokenStore
+import com.azitcrew.app.login.LoginActivity
 import com.azitcrew.app.webview.WebViewActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -35,6 +37,7 @@ class AppBridgeInterface(
             "openLocationSettings",
             "pickProfileImage",
             "getAppVersion",
+            "logout",
         )
     }
 
@@ -155,6 +158,15 @@ class AppBridgeInterface(
                         else -> pickGallery()
                     }
                     resolveWithValue(bridgeId, method, eventId, resultJson)
+                }
+                "logout" -> {
+                    TokenStore.clear(activity)
+                    resolveWithValue(bridgeId, method, eventId, "undefined")
+                    activity.startActivity(
+                        Intent(activity, LoginActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                        }
+                    )
                 }
                 else -> rejectWithError(bridgeId, method, eventId)
             }

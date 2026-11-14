@@ -88,4 +88,5 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.constraintlayout)
     implementation(libs.kakao.sdk.user)
+    implementation(libs.androidx.security.crypto)
 }

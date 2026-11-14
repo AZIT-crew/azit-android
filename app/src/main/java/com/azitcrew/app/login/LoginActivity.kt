@@ -13,6 +13,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
+import com.azitcrew.app.auth.TokenStore
 import com.azitcrew.app.databinding.ActivityLoginBinding
 import com.azitcrew.app.webview.WebViewActivity
 import com.kakao.sdk.auth.model.OAuthToken
@@ -43,6 +44,11 @@ class LoginActivity : AppCompatActivity() {
             insets
         }
 
+        TokenStore.load(this)?.let { savedToken ->
+            launchWebView(savedToken)
+            return
+        }
+
         startGradientAnimation()
 
         lifecycleScope.launch {
@@ -71,7 +77,10 @@ class LoginActivity : AppCompatActivity() {
 
     private fun loginWithKakao() {
         val callback: (OAuthToken?, Throwable?) -> Unit = { token, error ->
-            if (error == null && token != null) launchWebView(token.accessToken)
+            if (error == null && token != null) {
+                TokenStore.save(this, token.accessToken)
+                launchWebView(token.accessToken)
+            }
         }
 
         if (UserApiClient.instance.isKakaoTalkLoginAvailable(this)) {
