@@ -10,6 +10,10 @@ val keystoreProperties = Properties().apply {
     rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
 
+val localProperties = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+
 android {
     namespace = "com.azitcrew.app"
     compileSdk = 36
@@ -20,6 +24,10 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
+
+        val kakaoKey = localProperties.getProperty("kakao.app.key", "")
+        manifestPlaceholders["kakaoAppKey"] = kakaoKey
+        buildConfigField("String", "KAKAO_APP_KEY", "\"$kakaoKey\"")
     }
 
     signingConfigs {
@@ -77,4 +85,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.activity)
     implementation(libs.androidx.webkit)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.constraintlayout)
+    implementation(libs.kakao.sdk.user)
 }
