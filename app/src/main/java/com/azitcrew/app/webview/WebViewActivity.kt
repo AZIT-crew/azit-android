@@ -28,6 +28,11 @@ import androidx.core.view.updatePadding
 import com.azitcrew.app.BuildConfig
 import com.azitcrew.app.R
 import com.azitcrew.app.bridge.AppBridgeInterface
+import com.kakao.sdk.auth.model.OAuthToken
+import com.kakao.sdk.common.model.ClientError
+import com.kakao.sdk.common.model.ClientErrorCause
+import com.kakao.sdk.user.UserApiClient
+import org.json.JSONObject
 import com.azitcrew.app.databinding.ActivityWebviewBinding
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -155,6 +160,34 @@ class WebViewActivity : AppCompatActivity() {
         pendingGalleryCallback = { uri -> cont.resume(uri) }
         galleryLauncher.launch("image/*")
         cont.invokeOnCancellation { pendingGalleryCallback = null }
+    }
+
+    suspend fun performKakaoSocialLogin(): String = suspendCancellableCoroutine { cont ->
+        val callback: (OAuthToken?, Throwable?) -> Unit = { token, error ->
+            if (!cont.isCompleted) {
+                if (error == null && token != null) {
+                    cont.resume("{\"success\":true,\"accessToken\":${JSONObject.quote(token.accessToken)}}")
+                } else {
+                    cont.resume("{\"success\":false,\"message\":\"카카오 로그인에 실패했습니다.\"}")
+                }
+            }
+        }
+        if (UserApiClient.instance.isKakaoTalkLoginAvailable(this)) {
+            UserApiClient.instance.loginWithKakaoTalk(this) { token, error ->
+                if (error != null) {
+                    if (error is ClientError && error.reason == ClientErrorCause.Cancelled) {
+                        if (!cont.isCompleted) cont.resume("{\"success\":false,\"message\":\"로그인이 취소되었습니다.\"}")
+                    } else {
+                        UserApiClient.instance.loginWithKakaoAccount(this, callback = callback)
+                    }
+                } else {
+                    callback(token, null)
+                }
+            }
+        } else {
+            UserApiClient.instance.loginWithKakaoAccount(this, callback = callback)
+        }
+        cont.invokeOnCancellation { }
     }
 
     @SuppressLint("MissingPermission")

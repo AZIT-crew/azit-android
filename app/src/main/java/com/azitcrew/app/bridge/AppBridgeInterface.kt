@@ -12,8 +12,6 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.core.content.ContextCompat
 import com.azitcrew.app.BuildConfig
-import com.azitcrew.app.auth.TokenStore
-import com.azitcrew.app.login.LoginActivity
 import com.azitcrew.app.webview.WebViewActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -26,72 +24,42 @@ class AppBridgeInterface(
     private val webView: WebView,
     private val scope: CoroutineScope,
 ) {
-    companion object {
-        val BRIDGE_METHODS = listOf(
-            "openExternalBrowser",
-            "shareInviteCode",
-            "shareSchedule",
-            "openNaverMap",
-            "getCurrentPosition",
-            "getLocationPermissionStatus",
-            "openLocationSettings",
-            "pickProfileImage",
-            "getAppVersion",
-            "logout",
-        )
-    }
-
     @JavascriptInterface
     fun postMessage(data: String) {
         scope.launch {
             try {
                 val msg = JSONObject(data)
-                val type = msg.getString("type")
-                val bridgeId = msg.optString("bridgeId")
-                when (type) {
-                    "getBridgeState" -> sendBridgeState(bridgeId)
-                    "bridge" -> {
-                        val body = msg.getJSONObject("body")
-                        val method = body.getString("method")
-                        val eventId = body.getString("eventId")
-                        val args = body.getJSONArray("args")
-                        handleMethod(bridgeId, method, eventId, args)
-                    }
-                }
+                if (msg.getString("type") != "request") return@launch
+                val method = msg.getString("method")
+                val id = msg.getString("id")
+                val args = msg.getJSONArray("args")
+                handleMethod(method, id, args)
             } catch (_: Exception) {}
         }
     }
 
-    private fun sendBridgeState(bridgeId: String) {
-        val methodsJson = BRIDGE_METHODS.joinToString(",") { JSONObject.quote(it) }
-        evalJs(bridgeId, "var e=(window.nativeEmitterMap&&window.nativeEmitterMap[${JSONObject.quote(bridgeId)}])||window.nativeEmitter;if(e)e.emit('hydrate',{bridgeMethods:[$methodsJson],nativeInitialState:{}})")
-    }
-
-    private fun evalJs(bridgeId: String, body: String) {
-        webView.post { webView.evaluateJavascript("(function(){$body})()", null) }
-    }
-
-    private fun resolveWithValue(bridgeId: String, method: String, eventId: String, valueJs: String) {
-        // valueJs는 JS 표현식 (예: '"granted"', '{...}', 'undefined')
-        val js = "(function(){var e=(window.nativeEmitterMap&&window.nativeEmitterMap[${JSONObject.quote(bridgeId)}])||window.nativeEmitter;if(e)e.emit(${JSONObject.quote("$method-$eventId")},$valueJs,false);})()"
+    private fun resolveWithValue(id: String, valueJson: String) {
+        val response = "{\"type\":\"response\",\"id\":${JSONObject.quote(id)},\"result\":$valueJson}"
+        val js = "window.dispatchEvent(new MessageEvent('message',{data:${JSONObject.quote(response)}}));"
         webView.post { webView.evaluateJavascript(js, null) }
     }
 
-    private fun rejectWithError(bridgeId: String, method: String, eventId: String) {
-        val js = "(function(){var e=(window.nativeEmitterMap&&window.nativeEmitterMap[${JSONObject.quote(bridgeId)}])||window.nativeEmitter;if(e)e.emit(${JSONObject.quote("$method-$eventId")},undefined,true);})()"
+    private fun rejectWithError(id: String, message: String = "오류가 발생했습니다.") {
+        val response = "{\"type\":\"response\",\"id\":${JSONObject.quote(id)},\"error\":${JSONObject.quote(message)}}"
+        val js = "window.dispatchEvent(new MessageEvent('message',{data:${JSONObject.quote(response)}}));"
         webView.post { webView.evaluateJavascript(js, null) }
     }
 
-    private suspend fun handleMethod(bridgeId: String, method: String, eventId: String, args: JSONArray) {
+    private suspend fun handleMethod(method: String, id: String, args: JSONArray) {
         try {
             when (method) {
                 "getAppVersion" -> {
-                    resolveWithValue(bridgeId, method, eventId, JSONObject.quote(BuildConfig.VERSION_NAME))
+                    resolveWithValue(id, JSONObject.quote(BuildConfig.VERSION_NAME))
                 }
                 "openExternalBrowser" -> {
                     val url = args.getString(0)
                     openExternal(Uri.parse(url))
-                    resolveWithValue(bridgeId, method, eventId, "undefined")
+                    resolveWithValue(id, "null")
                 }
                 "shareInviteCode" -> {
                     val code = args.getString(0)
@@ -99,14 +67,14 @@ class AppBridgeInterface(
                     val webUrl = BuildConfig.WEB_URL
                     val text = "[AZIT] '${crewName}' 크루에서 당신을 초대했어요! 초대 코드를 입력하고 크루에 가입하세요.\n\n초대 코드: ${code}\n\n${webUrl}/onboarding?inviteCode=${code}"
                     shareText(text)
-                    resolveWithValue(bridgeId, method, eventId, "undefined")
+                    resolveWithValue(id, "null")
                 }
                 "shareSchedule" -> {
                     val scheduleId = args.getString(0)
                     val webUrl = BuildConfig.WEB_URL
                     val text = "[AZIT 일정] 이번 주 정기런/번개런 일정 확정!\n상세 일정을 확인하고, 지금 바로 AZIT 앱에서 신청해 주세요.\n${webUrl}/schedule/${scheduleId}"
                     shareText(text)
-                    resolveWithValue(bridgeId, method, eventId, "undefined")
+                    resolveWithValue(id, "null")
                 }
                 "openNaverMap" -> {
                     val address = args.getString(0)
@@ -117,21 +85,20 @@ class AppBridgeInterface(
                     if (!openExternal(naverMapUri)) {
                         openExternal(Uri.parse("market://details?id=com.nhn.android.nmap"))
                     }
-                    resolveWithValue(bridgeId, method, eventId, "undefined")
+                    resolveWithValue(id, "null")
                 }
                 "getLocationPermissionStatus" -> {
                     val status = getLocationPermissionStatus()
-                    resolveWithValue(bridgeId, method, eventId, JSONObject.quote(status))
+                    resolveWithValue(id, JSONObject.quote(status))
                 }
                 "openLocationSettings" -> {
                     val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                         data = Uri.fromParts("package", activity.packageName, null)
                     }
                     activity.startActivity(intent)
-                    resolveWithValue(bridgeId, method, eventId, "undefined")
+                    resolveWithValue(id, "null")
                 }
                 "getCurrentPosition" -> {
-                    // 위치 권한이 없으면 요청
                     val permission = Manifest.permission.ACCESS_FINE_LOCATION
                     val coarsePermission = Manifest.permission.ACCESS_COARSE_LOCATION
                     val hasPermission = ContextCompat.checkSelfPermission(activity, permission) == PackageManager.PERMISSION_GRANTED
@@ -140,15 +107,15 @@ class AppBridgeInterface(
                             .edit().putBoolean("location_asked", true).apply()
                         val granted = activity.requestBridgePermissions(arrayOf(permission, coarsePermission))
                         if (!granted) {
-                            rejectWithError(bridgeId, method, eventId)
+                            rejectWithError(id, "위치 권한이 거부되었습니다.")
                             return
                         }
                     }
                     val location = activity.getBridgeCurrentLocation()
                     if (location != null) {
-                        resolveWithValue(bridgeId, method, eventId, "{\"latitude\":${location.first},\"longitude\":${location.second}}")
+                        resolveWithValue(id, "{\"latitude\":${location.first},\"longitude\":${location.second}}")
                     } else {
-                        rejectWithError(bridgeId, method, eventId)
+                        rejectWithError(id, "위치를 가져올 수 없습니다.")
                     }
                 }
                 "pickProfileImage" -> {
@@ -157,21 +124,22 @@ class AppBridgeInterface(
                         "camera" -> pickCamera()
                         else -> pickGallery()
                     }
-                    resolveWithValue(bridgeId, method, eventId, resultJson)
+                    resolveWithValue(id, resultJson)
                 }
-                "logout" -> {
-                    TokenStore.clear(activity)
-                    resolveWithValue(bridgeId, method, eventId, "undefined")
-                    activity.startActivity(
-                        Intent(activity, LoginActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                "socialLogin" -> {
+                    val type = args.getString(0)
+                    when (type) {
+                        "kakao" -> {
+                            val result = activity.performKakaoSocialLogin()
+                            resolveWithValue(id, result)
                         }
-                    )
+                        else -> resolveWithValue(id, "{\"success\":false,\"message\":\"지원하지 않는 로그인 방식입니다.\"}")
+                    }
                 }
-                else -> rejectWithError(bridgeId, method, eventId)
+                else -> rejectWithError(id, "지원하지 않는 메서드: $method")
             }
         } catch (_: Exception) {
-            rejectWithError(bridgeId, method, eventId)
+            rejectWithError(id)
         }
     }
 
@@ -229,7 +197,6 @@ class AppBridgeInterface(
         return try {
             val inputStream = activity.contentResolver.openInputStream(uri) ?: return "{\"success\":false,\"message\":\"이미지를 읽을 수 없습니다.\"}"
             val bytes = inputStream.use { it.readBytes() }
-            // JPEG으로 압축 (70% quality)
             val originalBitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
             val outputStream = ByteArrayOutputStream()
             originalBitmap.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
@@ -238,7 +205,7 @@ class AppBridgeInterface(
             val fileName = "profile_${System.currentTimeMillis()}.jpg"
             val mimeType = "image/jpeg"
             "{\"success\":true,\"base64\":${JSONObject.quote(base64)},\"fileName\":${JSONObject.quote(fileName)},\"mimeType\":${JSONObject.quote(mimeType)}}"
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             "{\"success\":false,\"message\":\"이미지 처리 실패\"}"
         }
     }
