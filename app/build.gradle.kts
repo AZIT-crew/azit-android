@@ -22,7 +22,8 @@ android {
         applicationId = "com.azitcrew.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
+        // CI에서 -PversionCode=<커밋 수>로 주입한다. 로컬 빌드는 1
+        versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
         versionName = "1.0.0"
 
         val kakaoKey = localProperties.getProperty("kakao.app.key", "")
